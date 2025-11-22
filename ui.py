@@ -91,18 +91,34 @@ class MultiPingApp(tk.Tk):
 
         add_frame = ttk.Frame(hosts_frame)
         add_frame.pack(side=tk.TOP, fill=tk.X, padx=6, pady=(0, 6))
+
         self.new_host_var = tk.StringVar()
-        ttk.Entry(add_frame, textvariable=self.new_host_var).pack(side=tk.LEFT, fill=tk.X, expand=True)
+        self.new_desc_var = tk.StringVar()
+
+        # Host entry
+        ttk.Entry(add_frame, textvariable=self.new_host_var).pack(
+            side=tk.LEFT, fill=tk.X, expand=True
+        )
+
+        # Description (max ~20 chars)
+        ttk.Label(add_frame, text="Desc:").pack(side=tk.LEFT, padx=(4, 2))
+        ttk.Entry(add_frame, textvariable=self.new_desc_var, width=20).pack(side=tk.LEFT)
+
         ttk.Button(add_frame, text="Add", command=self._add_host).pack(side=tk.LEFT, padx=4)
-        ttk.Button(add_frame, text="Remove Selected", command=self._remove_selected).pack(side=tk.LEFT, padx=4)
-        ttk.Button(add_frame, text="Bulk Add…", command=self._bulk_add_dialog).pack(side=tk.LEFT, padx=4)
+        ttk.Button(add_frame, text="Remove Selected", command=self._remove_selected).pack(
+            side=tk.LEFT, padx=4
+        )
+        ttk.Button(add_frame, text="Bulk Add…", command=self._bulk_add_dialog).pack(
+            side=tk.LEFT, padx=4
+        )
+
 
         right = ttk.Frame(self)
         right.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=8, pady=6)
 
         table_frame = ttk.LabelFrame(right, text="Summary (Live)")
         table_frame.pack(side=tk.TOP, fill=tk.X)
-        cols = ("Host", "IP", "Last", "Min", "Avg", "Max", "Loss%", "Recv", "Sent", "LastSeen")
+        cols = ("Host", "Desc", "IP", "Last", "Min", "Avg", "Max", "Loss%", "Recv", "Sent", "LastSeen")
         self.table = ttk.Treeview(table_frame, columns=cols, show="headings", height=10)
         for c in cols:
             self.table.heading(c, text=c)
@@ -180,7 +196,9 @@ class MultiPingApp(tk.Tk):
         self.host_list.delete(0, tk.END)
         for h in self.settings.hosts:
             self.host_list.insert(tk.END, h)
-            self.stats[h] = HostStats(host=h, count=self.settings.count)
+            desc = self.settings.host_descriptions.get(h, "")
+            st = HostStats(host=h, count=self.settings.count, description=desc)
+            self.stats[h] = st
 
     # ----- host list ops -----
     def _add_host(self):
@@ -190,9 +208,21 @@ class MultiPingApp(tk.Tk):
         if h in self.stats:
             messagebox.showinfo("Host exists", f"{h} already in list.")
             return
+
+        # Clamp description to 20 chars (or whatever you want)
+        desc_raw = self.new_desc_var.get().strip()
+        desc = desc_raw[:20]
+
         self.host_list.insert(tk.END, h)
-        self.stats[h] = HostStats(host=h, count=int(self.count_var.get() or 60))
+        self.stats[h] = HostStats(
+            host=h,
+            count=int(self.count_var.get() or 60),
+            description=desc,
+        )
+
+        # Clear inputs
         self.new_host_var.set("")
+        self.new_desc_var.set("")
 
     def _remove_selected(self):
         sel = list(self.host_list.curselection())
@@ -299,7 +329,18 @@ class MultiPingApp(tk.Tk):
             self.settings.interval_s = float(self._get_interval_seconds())
             self.settings.timeout_ms = int(self._get_timeout_ms())
             self.settings.count = int(self.count_var.get())
-            self.settings.hosts = [self.host_list.get(i) for i in range(self.host_list.size())]
+
+            # Hosts in the listbox
+            hosts = [self.host_list.get(i) for i in range(self.host_list.size())]
+            self.settings.hosts = hosts
+
+            # Build description map from stats
+            desc_map = {}
+            for h in hosts:
+                st = self.stats.get(h)
+                desc_map[h] = (st.description if st else "")
+            self.settings.host_descriptions = desc_map
+
             self.settings.save()
             messagebox.showinfo("Saved", "Settings saved to config.json")
         except Exception as e:
@@ -334,6 +375,7 @@ class MultiPingApp(tk.Tk):
             mn, avg, mx = st.latency_stats()
             last_ms = last.latency_ms if last and last.success else None
             last_seen = time.strftime("%H:%M:%S", time.localtime(last.ts)) if last else ""
+            desc = st.description or ""
 
             def fmt(v):
                 return "" if v is None else str(v)
@@ -341,7 +383,19 @@ class MultiPingApp(tk.Tk):
             self.table.insert(
                 "",
                 tk.END,
-                values=(h, ip, fmt(last_ms), fmt(mn), fmt(avg), fmt(mx), f"{loss}", f"{recv}", f"{sent}", last_seen),
+                values=(
+                    h,
+                    desc,
+                    ip,
+                    fmt(last_ms),
+                    fmt(mn),
+                    fmt(avg),
+                    fmt(mx),
+                    f"{loss}",
+                    f"{recv}",
+                    f"{sent}",
+                    last_seen,
+                ),
             )
 
     def _refresh_plot(self):
@@ -375,31 +429,28 @@ class MultiPingApp(tk.Tk):
 
     def _show_summary(self):
         self.summary_shown = True
-
-        # Build a list of summary rows with basic stats + simple analytics
         rows: List[tuple] = []
+
         for h, st in sorted(self.stats.items(), key=lambda kv: kv[0].lower()):
             sent, recv, loss = st.counts()
             mn, avg, mx = st.latency_stats()
             last = st.last()
             ip = last.ip if last else ""
-            # New: number of pings above mean + 1σ
-            above_1sigma = st.count_above_sigma(1.0)
-            rows.append((h, ip, sent, recv, loss, mn, avg, mx, above_1sigma))
+            desc = st.description or ""
+            rows.append((h, desc, ip, sent, recv, loss, mn, avg, mx))
 
         win = tk.Toplevel(self)
         win.title("Run Summary")
         win.geometry("900x460")
 
-        # New column: >1σ (count above mean + 1 standard deviation)
-        cols = ("Host", "IP", "Sent", "Recv", "Loss%", "Min", "Avg", "Max", ">1σ")
+        cols = ("Host", "Desc", "IP", "Sent", "Recv", "Loss%", "Min", "Avg", "Max")
         tree = ttk.Treeview(win, columns=cols, show="headings")
         for c in cols:
             width = 95
             if c in ("Host", "IP"):
                 width = 140
-            if c == ">1σ":
-                width = 70
+            if c == "Desc":
+                width = 140
             tree.heading(c, text=c)
             tree.column(c, width=width, anchor=tk.CENTER)
         tree.pack(fill=tk.BOTH, expand=True, padx=8, pady=8)
@@ -407,21 +458,11 @@ class MultiPingApp(tk.Tk):
         def fmt(v):
             return "" if v is None else str(v)
 
-        for (h, ip, sent, recv, loss, mn, avg, mx, above_1sigma) in rows:
+        for (h, desc, ip, sent, recv, loss, mn, avg, mx) in rows:
             tree.insert(
                 "",
                 tk.END,
-                values=(
-                    h,
-                    ip,
-                    sent,
-                    recv,
-                    loss,
-                    fmt(mn),
-                    fmt(avg),
-                    fmt(mx),
-                    above_1sigma,
-                ),
+                values=(h, desc, ip, sent, recv, loss, fmt(mn), fmt(avg), fmt(mx)),
             )
 
         btns = ttk.Frame(win)
@@ -433,6 +474,7 @@ class MultiPingApp(tk.Tk):
                 "\t".join(
                     [
                         str(h),
+                        str(desc),
                         str(ip),
                         str(sent),
                         str(recv),
@@ -440,10 +482,9 @@ class MultiPingApp(tk.Tk):
                         fmt(mn),
                         fmt(avg),
                         fmt(mx),
-                        str(above_1sigma),
                     ]
                 )
-                for (h, ip, sent, recv, loss, mn, avg, mx, above_1sigma) in rows
+                for (h, desc, ip, sent, recv, loss, mn, avg, mx) in rows
             ]
             self.clipboard_clear()
             self.clipboard_append("\n".join(tsv_rows))
