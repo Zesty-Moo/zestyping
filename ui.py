@@ -1,3 +1,4 @@
+import os
 import tkinter as tk
 from tkinter import ttk, messagebox
 import time
@@ -17,7 +18,28 @@ TIMEOUT_PRESETS_MS = [100, 200, 300, 500, 1000, 1500, 2000]
 class MultiPingApp(tk.Tk):
     def __init__(self, settings: Settings, host_manager: HostManager, sample_queue):
         super().__init__()
-        self.title("ZestyPing — Minimal + Dropdowns")
+
+        try:
+            base_dir = os.path.dirname(os.path.abspath(__file__))
+
+            # Prefer .ico on Windows
+            ico_path = os.path.join(base_dir, "zestyping.ico")
+            png_path = os.path.join(base_dir, "zestyping.png")
+
+            if os.path.exists(ico_path):
+                # On Windows this often sets both titlebar and taskbar icon
+                self.iconbitmap(default=ico_path)
+            if os.path.exists(png_path):
+                # Cross-platform nice-looking icon (e.g. Linux, some Windows themes)
+                img = tk.PhotoImage(file=png_path)
+                # keep a reference so it doesn't get GC'd
+                self._icon_img = img
+                self.iconphoto(False, img)
+        except Exception as e:
+            # Failing to set an icon shouldn’t kill the app
+            print("Could not set window icon:", e)
+            
+        self.title("ZestyPing v0.2")
         self.geometry("1000x680")
 
         self.settings = settings
