@@ -437,13 +437,19 @@ class MultiPingApp(tk.Tk):
             last = st.last()
             ip = last.ip if last else ""
             desc = st.description or ""
-            rows.append((h, desc, ip, sent, recv, loss, mn, avg, mx))
+            mn, avg, mx = st.latency_stats()
+            mean_sd, stdev = st.latency_sigma()  # <-- NEW
+
+            rows.append(
+                (h, desc, ip, sent, recv, loss, mn, avg, mx, stdev)
+            )
 
         win = tk.Toplevel(self)
         win.title("Run Summary")
         win.geometry("900x460")
 
-        cols = ("Host", "Desc", "IP", "Sent", "Recv", "Loss%", "Min", "Avg", "Max")
+        cols = ("Host", "Desc", "IP", "Sent", "Recv", "Loss%", "Min", "Avg", "Max", "StDev")
+
         tree = ttk.Treeview(win, columns=cols, show="headings")
         for c in cols:
             width = 95
@@ -458,12 +464,24 @@ class MultiPingApp(tk.Tk):
         def fmt(v):
             return "" if v is None else str(v)
 
-        for (h, desc, ip, sent, recv, loss, mn, avg, mx) in rows:
+        for (h, desc, ip, sent, recv, loss, mn, avg, mx, stdev) in rows:
             tree.insert(
-                "",
-                tk.END,
-                values=(h, desc, ip, sent, recv, loss, fmt(mn), fmt(avg), fmt(mx)),
-            )
+        "",
+        tk.END,
+        values=(
+            h,
+            desc,
+            ip,
+            sent,
+            recv,
+            loss,
+            fmt(mn),
+            fmt(avg),
+            fmt(mx),
+            fmt(round(stdev, 2) if stdev is not None else "")
+        ),
+    )
+
 
         btns = ttk.Frame(win)
         btns.pack(fill=tk.X, padx=8, pady=(0, 8))
@@ -471,21 +489,23 @@ class MultiPingApp(tk.Tk):
         def copy_to_clipboard():
             header = "\t".join(cols)
             tsv_rows = [header] + [
-                "\t".join(
-                    [
-                        str(h),
-                        str(desc),
-                        str(ip),
-                        str(sent),
-                        str(recv),
-                        str(loss),
-                        fmt(mn),
-                        fmt(avg),
-                        fmt(mx),
-                    ]
-                )
-                for (h, desc, ip, sent, recv, loss, mn, avg, mx) in rows
-            ]
+            "\t".join(
+                [
+                    str(h),
+                    str(desc),
+                    str(ip),
+                    str(sent),
+                    str(recv),
+                    str(loss),
+                    fmt(mn),
+                    fmt(avg),
+                    fmt(mx),
+                    fmt(round(stdev, 2) if stdev is not None else "")
+                ]
+            )
+            for (h, desc, ip, sent, recv, loss, mn, avg, mx, stdev) in rows
+        ]
+
             self.clipboard_clear()
             self.clipboard_append("\n".join(tsv_rows))
             self.update()
