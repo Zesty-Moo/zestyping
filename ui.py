@@ -17,7 +17,7 @@ from host_input import parse_hosts
 INTERVAL_PRESETS = [0.1, 0.2, 0.5, 1.0, 2.0]  # seconds
 TIMEOUT_PRESETS_MS = [100, 200, 300, 500, 1000, 1500, 2000]
 APP_NAME = "ZestyPing"
-APP_VERSION = "0.2.0"
+APP_VERSION = "0.2.1"
 
 
 class MultiPingApp(tk.Tk):
