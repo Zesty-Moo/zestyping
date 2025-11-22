@@ -8,6 +8,7 @@ from typing import Dict, Optional, List
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from matplotlib.figure import Figure
 import matplotlib.dates as mdates
+import webbrowser
 
 from models import HostStats, PingSample
 from settings import Settings
@@ -667,7 +668,7 @@ class MultiPingApp(tk.Tk):
 
         win = tk.Toplevel(self)
         win.title(f"About {APP_NAME}")
-        win.geometry("380x220")
+        win.geometry("380x240")
         win.resizable(False, False)
         win.transient(self)
         win.grab_set()
@@ -692,6 +693,20 @@ class MultiPingApp(tk.Tk):
             "and troubleshooting."
         )
         ttk.Label(content, text=desc_text, justify="center").pack(anchor="center", pady=(0, 10))
+
+                # --- Website hyperlink ---
+        def open_site(event=None):
+            webbrowser.open("https://zestymoo.com")
+
+        link = ttk.Label(
+            content,
+            text="Visit ZestyMoo.com",
+            foreground="#0066CC",
+            cursor="hand2"
+        )
+        link.pack(anchor="center", pady=(5, 10))
+        link.bind("<Button-1>", open_site)
+
 
         # Environment info (optional, but useful)
         env_text = f"Python {sys.version.split()[0]}"
