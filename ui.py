@@ -375,32 +375,53 @@ class MultiPingApp(tk.Tk):
 
     def _show_summary(self):
         self.summary_shown = True
+
+        # Build a list of summary rows with basic stats + simple analytics
         rows: List[tuple] = []
         for h, st in sorted(self.stats.items(), key=lambda kv: kv[0].lower()):
             sent, recv, loss = st.counts()
             mn, avg, mx = st.latency_stats()
             last = st.last()
             ip = last.ip if last else ""
-            rows.append((h, ip, sent, recv, loss, mn, avg, mx))
+            # New: number of pings above mean + 1σ
+            above_1sigma = st.count_above_sigma(1.0)
+            rows.append((h, ip, sent, recv, loss, mn, avg, mx, above_1sigma))
 
         win = tk.Toplevel(self)
         win.title("Run Summary")
-        win.geometry("840x440")
-        cols = ("Host", "IP", "Sent", "Recv", "Loss%", "Min", "Avg", "Max")
+        win.geometry("900x460")
+
+        # New column: >1σ (count above mean + 1 standard deviation)
+        cols = ("Host", "IP", "Sent", "Recv", "Loss%", "Min", "Avg", "Max", ">1σ")
         tree = ttk.Treeview(win, columns=cols, show="headings")
         for c in cols:
+            width = 95
+            if c in ("Host", "IP"):
+                width = 140
+            if c == ">1σ":
+                width = 70
             tree.heading(c, text=c)
-            tree.column(c, width=95 if c not in ("Host", "IP") else 140, anchor=tk.CENTER)
+            tree.column(c, width=width, anchor=tk.CENTER)
         tree.pack(fill=tk.BOTH, expand=True, padx=8, pady=8)
 
         def fmt(v):
             return "" if v is None else str(v)
 
-        for (h, ip, sent, recv, loss, mn, avg, mx) in rows:
+        for (h, ip, sent, recv, loss, mn, avg, mx, above_1sigma) in rows:
             tree.insert(
                 "",
                 tk.END,
-                values=(h, ip, sent, recv, loss, fmt(mn), fmt(avg), fmt(mx)),
+                values=(
+                    h,
+                    ip,
+                    sent,
+                    recv,
+                    loss,
+                    fmt(mn),
+                    fmt(avg),
+                    fmt(mx),
+                    above_1sigma,
+                ),
             )
 
         btns = ttk.Frame(win)
@@ -409,7 +430,20 @@ class MultiPingApp(tk.Tk):
         def copy_to_clipboard():
             header = "\t".join(cols)
             tsv_rows = [header] + [
-                "\t".join(map(lambda x: str(x) if x is not None else "", row)) for row in rows
+                "\t".join(
+                    [
+                        str(h),
+                        str(ip),
+                        str(sent),
+                        str(recv),
+                        str(loss),
+                        fmt(mn),
+                        fmt(avg),
+                        fmt(mx),
+                        str(above_1sigma),
+                    ]
+                )
+                for (h, ip, sent, recv, loss, mn, avg, mx, above_1sigma) in rows
             ]
             self.clipboard_clear()
             self.clipboard_append("\n".join(tsv_rows))
