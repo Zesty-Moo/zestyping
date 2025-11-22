@@ -1,7 +1,9 @@
 import os
 import tkinter as tk
 from tkinter import ttk, messagebox
+from tkinter import filedialog
 import time
+import csv
 from typing import Dict, Optional, List
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from matplotlib.figure import Figure
@@ -275,27 +277,136 @@ class MultiPingApp(tk.Tk):
     def _bulk_add_dialog(self):
         win = tk.Toplevel(self)
         win.title("Bulk Add Hosts")
-        win.geometry("650x420")
+        win.geometry("720x540")
+
         ttk.Label(
             win,
-            text="Paste hosts, CIDR blocks, or ranges (comma/space/newline separated).",
+            text="Paste hosts/ranges/CIDRs below OR import from CSV.\n"
+                 "CSV format: first column=host or CIDR, second column=description.",
         ).pack(anchor="w", padx=8, pady=(8, 4))
+
         examples = (
-            "Examples:\n"
+            "Text examples:\n"
             "10.0.0.1 10.0.0.2,10.0.0.3\n"
             "10.0.0.10-10.0.0.20   (full range)\n"
             "10.0.0.10-20          (last octet)\n"
             "10.0.0.[5-15]         (brackets)\n"
             "10.0.1.0/29           (CIDR; hosts only)\n"
-            "switch-a.lan core-sw1"
+            "switch-a.lan core-sw1\n\n"
+            "CSV examples (host_or_cidr,description):\n"
+            "8.8.8.8,Google DNS\n"
+            "10.0.0.0/29,Branch LAN subnet"
         )
         ttk.Label(win, text=examples, justify="left").pack(anchor="w", padx=8, pady=(0, 6))
+
         txt = tk.Text(win, height=12, wrap="word")
         txt.pack(fill=tk.BOTH, expand=True, padx=8, pady=6)
+
         status = tk.StringVar(value="")
         ttk.Label(win, textvariable=status).pack(anchor="w", padx=8, pady=(0, 6))
+
         btns = ttk.Frame(win)
         btns.pack(fill=tk.X, padx=8, pady=(0, 8))
+
+        def do_add_from_text():
+            hosts = parse_hosts(txt.get("1.0", tk.END), limit=10000)
+            already = set(self.stats.keys())
+            added = 0
+            for h in hosts:
+                if h not in already:
+                    self.host_list.insert(tk.END, h)
+                    # no description for text bulk-add, keep as empty string
+                    self.stats[h] = HostStats(
+                        host=h,
+                        count=int(self.count_var.get() or 60),
+                        description="",
+                    )
+                    already.add(h)
+                    added += 1
+            status.set(
+                f"Text: parsed {len(hosts)} host(s). "
+                f"Added {added}, {len(hosts) - added} skipped (duplicates)."
+            )
+            self._refresh_table()
+
+        def import_csv():
+            path = filedialog.askopenfilename(
+                title="Import Hosts from CSV",
+                filetypes=[("CSV files", "*.csv"), ("All files", "*.*")],
+            )
+            if not path:
+                return
+
+            total_rows = 0
+            total_parsed = 0
+            total_added = 0
+            already = set(self.stats.keys())
+
+            try:
+                with open(path, newline="", encoding="utf-8") as f:
+                    reader = csv.reader(f)
+                    for row in reader:
+                        # Skip empty rows
+                        if not row or all(not (c or "").strip() for c in row):
+                            continue
+
+                        total_rows += 1
+                        host_expr = (row[0] or "").strip()
+                        if not host_expr:
+                            continue
+
+                        desc_raw = (row[1] if len(row) > 1 else "").strip()
+                        desc = desc_raw[:20]  # clamp to 20 chars
+
+                        hosts = parse_hosts(host_expr, limit=10000)
+                        if not hosts:
+                            continue
+
+                        total_parsed += len(hosts)
+                        for h in hosts:
+                            if h not in already:
+                                self.host_list.insert(tk.END, h)
+                                self.stats[h] = HostStats(
+                                    host=h,
+                                    count=int(self.count_var.get() or 60),
+                                    description=desc,
+                                )
+                                already.add(h)
+                                total_added += 1
+
+                status.set(
+                    f"CSV: rows={total_rows}, hosts expanded={total_parsed}, "
+                    f"added={total_added}, skipped={total_parsed - total_added} (duplicates)."
+                )
+                self._refresh_table()
+            except Exception as e:
+                messagebox.showerror("CSV Import Failed", str(e))
+
+        def save_template():
+            path = filedialog.asksaveasfilename(
+                title="Save CSV Template",
+                defaultextension=".csv",
+                filetypes=[("CSV files", "*.csv"), ("All files", "*.*")],
+                initialfile="zestyping_hosts_template.csv",
+            )
+            if not path:
+                return
+
+            try:
+                with open(path, "w", newline="", encoding="utf-8") as f:
+                    writer = csv.writer(f)
+                    writer.writerow(["host_or_cidr", "description"])
+                    writer.writerow(["8.8.8.8", "Google DNS"])
+                    writer.writerow(["10.0.0.0/29", "Branch LAN subnet"])
+                status.set(f"Template saved to: {path}")
+            except Exception as e:
+                messagebox.showerror("Save Template Failed", str(e))
+
+        # Buttons: text add, CSV import, template, close
+        ttk.Button(btns, text="Add from Text", command=do_add_from_text).pack(side=tk.LEFT, padx=(0, 4))
+        ttk.Button(btns, text="Import CSV…", command=import_csv).pack(side=tk.LEFT, padx=(0, 4))
+        ttk.Button(btns, text="Save CSV Template…", command=save_template).pack(side=tk.LEFT, padx=(0, 4))
+        ttk.Button(btns, text="Close", command=win.destroy).pack(side=tk.RIGHT)
 
         def do_add():
             hosts = parse_hosts(txt.get("1.0", tk.END), limit=10000)
@@ -480,7 +591,9 @@ class MultiPingApp(tk.Tk):
 
         win = tk.Toplevel(self)
         win.title("Run Summary")
-        win.geometry("900x460")
+        win.geometry("1080x720")
+        win.transient(self)
+        win.grab_set()
 
         cols = ("Host", "Desc", "IP", "Sent", "Recv", "Loss%", "Min", "Avg", "Max", "StDev")
 
