@@ -14,6 +14,9 @@ from host_input import parse_hosts
 
 INTERVAL_PRESETS = [0.1, 0.2, 0.5, 1.0, 2.0]  # seconds
 TIMEOUT_PRESETS_MS = [100, 200, 300, 500, 1000, 1500, 2000]
+APP_NAME = "ZestyPing"
+APP_VERSION = "0.2.0"
+
 
 class MultiPingApp(tk.Tk):
     def __init__(self, settings: Settings, host_manager: HostManager, sample_queue):
@@ -39,8 +42,17 @@ class MultiPingApp(tk.Tk):
             # Failing to set an icon shouldn’t kill the app
             print("Could not set window icon:", e)
             
-        self.title("ZestyPing v0.2")
+        self.title(f"{APP_NAME} v{APP_VERSION}")
         self.geometry("1000x680")
+        # --- Menu bar with Help -> About ---
+        menubar = tk.Menu(self)
+
+        help_menu = tk.Menu(menubar, tearoff=0)
+        help_menu.add_command(label=f"About {APP_NAME}", command=self._show_about)
+        menubar.add_cascade(label="Help", menu=help_menu)
+
+        self.config(menu=menubar)
+
 
         self.settings = settings
         self.host_manager = host_manager
@@ -535,6 +547,47 @@ class MultiPingApp(tk.Tk):
 
         ttk.Button(btns, text="Copy TSV", command=copy_to_clipboard).pack(side=tk.LEFT)
         ttk.Button(btns, text="Close", command=win.destroy).pack(side=tk.RIGHT)
+
+    def _show_about(self):
+        import sys
+        from tkinter import font as tkfont
+
+        win = tk.Toplevel(self)
+        win.title(f"About {APP_NAME}")
+        win.geometry("380x220")
+        win.resizable(False, False)
+        win.transient(self)
+        win.grab_set()
+
+        # Make sure the dialog stays above the main window
+        win.focus_set()
+
+        content = ttk.Frame(win, padding=10)
+        content.pack(fill=tk.BOTH, expand=True)
+
+        # Title
+        title_font = tkfont.nametofont("TkDefaultFont").copy()
+        title_font.configure(size=12, weight="bold")
+
+        ttk.Label(content, text=APP_NAME, font=title_font).pack(anchor="center", pady=(0, 4))
+        ttk.Label(content, text=f"Version {APP_VERSION}").pack(anchor="center", pady=(0, 10))
+
+        # Description
+        desc_text = (
+            "ZestyPing is a multi-host ping and latency\n"
+            "visualization tool for quick network health checks\n"
+            "and troubleshooting."
+        )
+        ttk.Label(content, text=desc_text, justify="center").pack(anchor="center", pady=(0, 10))
+
+        # Environment info (optional, but useful)
+        env_text = f"Python {sys.version.split()[0]}"
+        ttk.Label(content, text=env_text, foreground="#555555").pack(anchor="center")
+
+        # Close button
+        btn_frame = ttk.Frame(content)
+        btn_frame.pack(fill=tk.X, pady=(15, 0))
+        ttk.Button(btn_frame, text="Close", command=win.destroy).pack(anchor="center")
 
     def _on_close(self):
         try:
